@@ -132,8 +132,8 @@ else:
 if args.min_snr > 0:
     min_snr = args.min_snr
 else:
-    print "Using default SNR of 30dB"
-    min_snr = 30
+    print "Using default SNR of 20dB"
+    min_snr = 20
 
 # compute FFT for IQ file
 if iqFileName:
@@ -172,12 +172,18 @@ except:
 #print len(fftFloat)
 #print len(fftFrameList)
 
+# want to ignore the DC spike for the purposes of calulating the noise
+# floor as well as finding signal spikes
+dcBlockLow = int(0.003*fft_size) # using half a percent
+dcBlockHigh = fft_size - dcBlockLow
+# print "DC Block indices: " + str(dcBlockLow) + " " + str(dcBlockHigh)
+
 # search through FFT file to find any "sudden" changes in signal level
-noiseLevel = -40.0 # default value
+noiseLevel = -60.0 # default value
 # take the mean of the mean of each frame to establish the noise level
 meanList = []
 for frame in fftFrameList:
-    meanList.append(numpy.mean(frame))
+    meanList.append(numpy.mean(frame[dcBlockLow:dcBlockHigh]))
 noiseLevel = numpy.mean(meanList)
 signalThresh = noiseLevel + min_snr
 if verbose:
@@ -188,8 +194,8 @@ signalPointList = [] # contains coordinates (time, freq) of all detected maxima
 for frame in fftFrameList:
     # see if any buckets in the frame exceed the noise level, omitting any
     # maxima that occurs at time = 0
-    if (max(frame) > signalThresh) and (frameCount != 0):
-        maxBucketIndex = numpy.argmax(frame)
+    if (max(frame[dcBlockLow:dcBlockHigh]) > signalThresh) and (frameCount != 0):
+        maxBucketIndex = numpy.argmax(frame[dcBlockLow:dcBlockHigh])
         signalPointList.append((frameCount, maxBucketIndex))
         # to handle multiple transmissions and FSK, will need to find local maxima
     frameCount += 1
@@ -223,11 +229,39 @@ while i < len(signalPointList):
                 currentDuration += 1
                 signalPointList[j] = (-10, -10) # remove this point from further consideration
             j += 1
+
+
+        # estimate the bandwidth of the signal using frame in middle
+        #print "dbg"
+        #print currentSignalStart
+        #print currentDuration
+        #print int(currentSignalStart+currentDuration/2)
+        #print len(fftFrameList)
+        # NEED to go through all the frames rather than just the middle one
+        # if any frame goes past the peak - 20(?) than flag it as part of BW
+        frameBW = fftFrameList[int(currentSignalStart+currentDuration/2)] 
+        currentBW = 1
+        bwThresh = max(frameBW) - 20 # assume a 20dB drop from max
+        #bwThresh = frameBW[currentSignalFreq] - 20 # assume a 20dB drop from max
+        while True:
+            if (currentSignalFreq + currentBW) >= fft_size or \
+               (currentSignalFreq - currentBW) < 0:
+                break
+            elif (frameBW[currentSignalFreq-currentBW] < bwThresh) and \
+                 (frameBW[currentSignalFreq+currentBW] < bwThresh):
+                break
+            else:
+                currentBW += 1
+
         # add final signal properties to new list
-        signalDurationList.append((currentSignalStart, currentDuration, currentSignalFreq))
+        signalDurationList.append((currentSignalStart, currentDuration, \
+                                   currentSignalFreq, 2*currentBW-1))
     i += 1
 
-print signalDurationList
+#print signalDurationList
+       
+
+print "Total File duration = " + str(1.0*numFrames/frame_rate) + "sec"
 print "Total Number of Transmissions Found: " + str(len(signalDurationList))
 for s in signalDurationList:
     timeStamp = 1.0*s[0]/frame_rate # in seconds
@@ -237,7 +271,8 @@ for s in signalDurationList:
         frequency = center_freq + 1.0*s[2]*(samp_rate/fft_size)
     else:
         frequency = center_freq - (fft_size - s[2])*(samp_rate/fft_size)
-    signal = signalInfo(timeStamp, duration, frequency, 0, SIGNAL_OOK)
+    bandwidth = s[3] * samp_rate/fft_size
+    signal = signalInfo(timeStamp, duration, frequency, bandwidth, SIGNAL_OOK)
     signalList.append(signal)
 
 # print results to sdtout
