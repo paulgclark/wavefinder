@@ -285,6 +285,8 @@ parser.add_argument("-n", "--min_snr", help="Minimum SNR (dB)", type=int)
 parser.add_argument("-p", "--prune", help="output a minimized IQ file containing only the signals", action="store_true")
 parser.add_argument("-o", "--out", help="output pruned i-q file name")
 parser.add_argument("-b", "--buf", help="Extra amount to save on prune (ms)", type=int)
+parser.add_argument("-m", "--min_duration", help="Ignore signals that don't last at least this long (ms)", type=int)
+parser.add_argument("-l", "--list_freqs", help="List the supplied number of most commonly found frequencies", type=int)
 parser.add_argument("-d", "--decimate", help="minimize size by decimating",
                     action="store_true")
 parser.add_argument("-v", "--verbose", help="increase output verbosity",
@@ -353,6 +355,14 @@ else:
     if prune:
         print "Using default buffer size of " + str(defaultBuf) + "ms"
         buf = defaultBuf
+if args.min_duration > 0:
+    minDuration = args.min_duration/1000.0
+else:
+    minDuration = 0.0
+if args.list_freqs > 0:
+    frequencyListCount = args.list_freqs
+else:
+    frequencyListCount = 0
 
 # compute FFT for IQ file
 if iqFileName:
@@ -491,6 +501,14 @@ while i < len(signalPointList):
                                    currentSignalFreq, 2*currentBW-1))
     i += 1
 
+# eliminate signals that don't last long enough
+tempList = []
+if minDuration > 0:
+    for s in signalDurationList:
+        if s[1] >= minDuration*frame_rate:
+            tempList.append(s)
+    signalDurationList = tempList
+
 if debug:
     print "List of signal durations:"
     print signalDurationList
@@ -514,6 +532,17 @@ for s in signalDurationList:
 for signal in signalList:
     print signal.stringVal()
 print "\n"
+
+# print out the most common frequencies found
+freqList = []
+for s in signalList:
+    freqList.append(s.frequency)
+from collections import Counter
+freqListCounter = Counter(freqList)
+print len(freqList)
+print "Most common Freq 1: " + str(freqListCounter.most_common(3)[0][0]) + " " + str(freqListCounter.most_common(3)[0][1])
+print "Most common Freq 2: " + str(freqListCounter.most_common(3)[1][0]) + " " + str(freqListCounter.most_common(3)[1][1])
+print "Most common Freq 3: " + str(freqListCounter.most_common(3)[2][0]) + " " + str(freqListCounter.most_common(3)[2][1])
 
 # if we haven't been told to prune the file, then we're done
 if not prune:
