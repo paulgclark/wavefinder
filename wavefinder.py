@@ -300,8 +300,8 @@ prune = args.prune
 if args.iq:
     iqFileName = args.iq
     # try to parse the file name to see if if contains the iq parameters
-    inputFileObject = iqFileObject(fileName = iqFileName)
     try:
+        inputFileObject = iqFileObject(fileName = iqFileName)
         center_freq = inputFileObject.centerFreq
         samp_rate = inputFileObject.sampRate
     # since the parameters weren't there, they must be supplied from other args
